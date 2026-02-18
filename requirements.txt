@@ -1,0 +1,17 @@
+fastapi
+langchain
+langchain-huggingface
+langchain-text-splitters
+pinecone
+langchain_pinecone
+langchain_google_genai
+sentence-transformers
+python-dotenv
+elevenlabs
+langgraph
+
+pypdf
+uvicorn
+python-multipart
+pdf2docx
+python-pptx
