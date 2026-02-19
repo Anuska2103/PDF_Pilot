@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from pypdf import PdfReader
 import io
 import os
+import uvicorn
 import uuid
 from typing import Dict, Optional, List
 
@@ -320,3 +321,9 @@ async def chat(request: ChatRequest):
     """RAG-based chat endpoint using Pinecone vectorstore."""
     result = chat_graph.invoke({"user_query": request.query})
     return {"response": result.get("chat_response", "No response generated")}
+
+
+if __name__ == "__main__":
+    
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
