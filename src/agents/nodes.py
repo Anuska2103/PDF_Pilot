@@ -1,4 +1,6 @@
 import os
+import json
+import re
 from google import genai
 from elevenlabs import ElevenLabs
 from src.agents.states import GraphState
@@ -8,9 +10,36 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 eleven_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
+
+def parse_json_safe(text: str):
+    """Robustly parse JSON from Gemini responses that may be malformed."""
+    # 1. Try direct parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Strip markdown code fences (```json ... ``` or ``` ... ```)
+    cleaned = re.sub(r'^```(?:json)?\s*', '', text.strip(), flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s*```$', '', cleaned.strip())
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Extract first JSON array or object using regex
+    match = re.search(r'(\[.*\]|\{.*\})', cleaned, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # 4. Remove trailing commas before } or ] (common Gemini mistake)
+    fixed = re.sub(r',\s*([}\]])', r'\1', cleaned)
+    return json.loads(fixed)
 
 #node function
 
@@ -91,8 +120,7 @@ def generate_script_node(state: GraphState):
 
 
 def generate_tts_script_node(state: GraphState):
-    import json
-    script = json.loads(state["script"])
+    script = parse_json_safe(state["script"])
     
     # Assign specific Voice IDs for your two speakers
     voice_host = "CwhRBWXzGAHq8TQ4Fs17" # Example: Rachel
@@ -182,8 +210,7 @@ def ppt_outline_node(state: GraphState):
         config={"response_mime_type": "application/json"}
     )
     
-    import json
-    ppt_outline = json.loads(response.text)
+    ppt_outline = parse_json_safe(response.text)
     
     return {"ppt_outline": ppt_outline}
 
