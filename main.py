@@ -18,33 +18,49 @@ from typing import Dict, Optional, List
 
 graphs = {}
 
+def load_graphs():
+    """Lazy load AI models only when needed to save memory"""
+    if not graphs:
+        print("🔄 Loading AI models...")
+        from src.agents.graph import (
+            ingest_graph, summarize_graph, audio_graph, chat_graph,
+            script_graph, podcast_graph, ppt_graph, ppt_download_graph
+        )
+        
+        graphs["ingest"] = ingest_graph
+        graphs["summarize"] = summarize_graph
+        graphs["audio"] = audio_graph
+        graphs["chat"] = chat_graph
+        graphs["script"] = script_graph
+        graphs["podcast"] = podcast_graph
+        graphs["ppt"] = ppt_graph
+        graphs["ppt_download"] = ppt_download_graph
+        print("✅ AI models loaded")
+    return graphs
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
-    # Import heavy modules ONLY here
-    from src.agents.graph import (
-        ingest_graph, summarize_graph, audio_graph, chat_graph,
-        script_graph, podcast_graph, ppt_graph, ppt_download_graph
-    )
+    # Only initialize lightweight components at startup
+    print("🚀 Starting PDF Bot API...")
+    
+    # Initialize Pinecone (lightweight)
     from src.tools.database import init_pinecone_index
-
-    graphs["ingest"] = ingest_graph
-    graphs["summarize"] = summarize_graph
-    graphs["audio"] = audio_graph
-    graphs["chat"] = chat_graph
-    graphs["script"] = script_graph
-    graphs["podcast"] = podcast_graph
-    graphs["ppt"] = ppt_graph
-    graphs["ppt_download"] = ppt_download_graph
-
     init_pinecone_index()
-
-    print("✅ Models + Pinecone loaded")
+    print("✅ Pinecone initialized")
+    
+    # Don't load heavy AI models here - load them lazily when needed
+    print("✅ App ready - AI models will load on first request")
 
     yield   # ---- APP STARTS SERVING HERE ----
 
-    print("Shutting down")
-app = FastAPI(lifespan=lifespan)
+    print("🔄 Shutting down")
+
+app = FastAPI(
+    title="PDF Bot API",
+    description="AI-powered PDF processing with chat, summarization, and presentation generation",
+    version="1.0.0",
+    lifespan=lifespan
+)
 # init_pinecone_index()
 
 
@@ -112,6 +128,19 @@ class PPTOutlineResponse(BaseModel):
 class DownloadPPTRequest(BaseModel):
     session_id: str
 
+# ========== HEALTH CHECK ENDPOINTS ==========
+@app.get("/")
+async def root():
+    return {
+        "message": "PDF Bot API", 
+        "status": "running",
+        "version": "1.0.0"
+    }
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
 # ========== ENDPOINT 1: /upload ==========
 @app.post("/upload", response_model=UploadResponse)
 async def upload_pdf(file: UploadFile = File(...)):
@@ -143,6 +172,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     }
     
     # Asynchronously ingest to Pinecone for RAG
+    graphs = load_graphs()
     ingest_result = graphs["ingest"].invoke({"pdf_text": extracted_text})
     
     return UploadResponse(
@@ -166,6 +196,7 @@ async def summarize(request: SummarizeRequest):
         raise HTTPException(status_code=400, detail="No PDF text found in session")
     
     # Invoke summarizer agent
+    graphs = load_graphs()
     summary_result = graphs["summarize"].invoke({"pdf_text": pdf_text})
     summary_text = summary_result.get("summary_text", "")
     
@@ -195,6 +226,7 @@ async def audio_overview(request: AudioOverviewRequest):
         )
     
     # Invoke audio generation agent
+    graphs = load_graphs()
     audio_result = graphs["audio"].invoke({"summary_text": summary_text})
     audio_path = audio_result.get("audio_path", "")
     
@@ -222,6 +254,7 @@ async def audio_podcast(request: AudioOverviewRequest):
         raise HTTPException(status_code=400, detail="No PDF text found in session")
     
     #  Generate podcast script
+    graphs = load_graphs()
     script_result = graphs["script"].invoke({"pdf_text": pdf_text})
     script = script_result.get("script", "")
     
@@ -298,6 +331,7 @@ async def ppt_outline(request: PPTOutlineRequest):
         )
     
     # Invoke PPT outline generation
+    graphs = load_graphs()
     ppt_result = graphs["ppt"].invoke({"summary_text": summary_text})
     ppt_outline_data = ppt_result.get("ppt_outline", [])
     
@@ -331,6 +365,7 @@ async def download_ppt(request: DownloadPPTRequest):
         )
     
     # Use the PPT download graph to generate the file
+    graphs = load_graphs()
     ppt_result = graphs["ppt_download"].invoke({"ppt_outline": ppt_outline})
     ppt_file_path = ppt_result.get("ppt_file_path")
     
@@ -348,6 +383,7 @@ async def download_ppt(request: DownloadPPTRequest):
 @app.post("/chat")
 async def chat(request: ChatRequest):
     """RAG-based chat endpoint using Pinecone vectorstore."""
+    graphs = load_graphs()
     result = graphs["chat"].invoke({"user_query": request.query})
     return {"response": result.get("chat_response", "No response generated")}
 
