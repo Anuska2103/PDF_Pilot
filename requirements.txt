@@ -14,3 +14,6 @@ uvicorn
 python-multipart
 pdf2docx
 python-pptx
+
+google-genai
+langchain-google-genai
