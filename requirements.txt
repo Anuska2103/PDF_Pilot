@@ -1,15 +1,14 @@
 fastapi
+pydantic
 langchain
 langchain-huggingface
 langchain-text-splitters
 pinecone
 langchain_pinecone
-langchain_google_genai
 sentence-transformers
 python-dotenv
 elevenlabs
 langgraph
-
 pypdf
 uvicorn
 python-multipart
