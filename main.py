@@ -2,15 +2,11 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-# from src.agents.graph import ingest_graph, summarize_graph, audio_graph, chat_graph, script_graph, podcast_graph, ppt_graph, ppt_download_graph
-from src.tools.database import init_pinecone_index
-from src.tools.pdf_utils import convert_pdf_to_docx
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from pypdf import PdfReader
 import io
 import os
-import uvicorn
 import uuid
 from typing import Dict, Optional, List
 
@@ -307,6 +303,7 @@ async def convert_pdf_to_docx_endpoint(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     pdf_bytes = await file.read()
     try:
+        from src.tools.pdf_utils import convert_pdf_to_docx
         docx_path = convert_pdf_to_docx(pdf_bytes)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
