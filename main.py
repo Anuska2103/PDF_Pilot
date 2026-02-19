@@ -2,10 +2,11 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from src.agents.graph import ingest_graph, summarize_graph, audio_graph, chat_graph, script_graph, podcast_graph, ppt_graph, ppt_download_graph
+# from src.agents.graph import ingest_graph, summarize_graph, audio_graph, chat_graph, script_graph, podcast_graph, ppt_graph, ppt_download_graph
 from src.tools.database import init_pinecone_index
 from src.tools.pdf_utils import convert_pdf_to_docx
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 from pypdf import PdfReader
 import io
 import os
@@ -13,10 +14,38 @@ import uvicorn
 import uuid
 from typing import Dict, Optional, List
 
-app = FastAPI()
 
 
-init_pinecone_index()
+graphs = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    # Import heavy modules ONLY here
+    from src.agents.graph import (
+        ingest_graph, summarize_graph, audio_graph, chat_graph,
+        script_graph, podcast_graph, ppt_graph, ppt_download_graph
+    )
+    from src.tools.database import init_pinecone_index
+
+    graphs["ingest"] = ingest_graph
+    graphs["summarize"] = summarize_graph
+    graphs["audio"] = audio_graph
+    graphs["chat"] = chat_graph
+    graphs["script"] = script_graph
+    graphs["podcast"] = podcast_graph
+    graphs["ppt"] = ppt_graph
+    graphs["ppt_download"] = ppt_download_graph
+
+    init_pinecone_index()
+
+    print("✅ Models + Pinecone loaded")
+
+    yield   # ---- APP STARTS SERVING HERE ----
+
+    print("Shutting down")
+app = FastAPI(lifespan=lifespan)
+# init_pinecone_index()
 
 
 session_store: Dict[str, Dict] = {}
@@ -114,7 +143,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     }
     
     # Asynchronously ingest to Pinecone for RAG
-    ingest_result = ingest_graph.invoke({"pdf_text": extracted_text})
+    ingest_result = graphs["ingest"].invoke({"pdf_text": extracted_text})
     
     return UploadResponse(
         session_id=session_id,
@@ -137,7 +166,7 @@ async def summarize(request: SummarizeRequest):
         raise HTTPException(status_code=400, detail="No PDF text found in session")
     
     # Invoke summarizer agent
-    summary_result = summarize_graph.invoke({"pdf_text": pdf_text})
+    summary_result = graphs["summarize"].invoke({"pdf_text": pdf_text})
     summary_text = summary_result.get("summary_text", "")
     
     # Store summary in session state for audio generation
@@ -166,7 +195,7 @@ async def audio_overview(request: AudioOverviewRequest):
         )
     
     # Invoke audio generation agent
-    audio_result = audio_graph.invoke({"summary_text": summary_text})
+    audio_result = graphs["audio"].invoke({"summary_text": summary_text})
     audio_path = audio_result.get("audio_path", "")
     
     # Store audio path in session
@@ -193,14 +222,14 @@ async def audio_podcast(request: AudioOverviewRequest):
         raise HTTPException(status_code=400, detail="No PDF text found in session")
     
     #  Generate podcast script
-    script_result = script_graph.invoke({"pdf_text": pdf_text})
+    script_result = graphs["script"].invoke({"pdf_text": pdf_text})
     script = script_result.get("script", "")
     
     if not script:
         raise HTTPException(status_code=500, detail="Failed to generate podcast script")
     
     # Generate audio from script with two different voices
-    audio_result = podcast_graph.invoke({"script": script})
+    audio_result = graphs["podcast"].invoke({"script": script})
     audio_path = audio_result.get("audio_path", "")
     
     # Store both audio path and script in session
@@ -269,7 +298,7 @@ async def ppt_outline(request: PPTOutlineRequest):
         )
     
     # Invoke PPT outline generation
-    ppt_result = ppt_graph.invoke({"summary_text": summary_text})
+    ppt_result = graphs["ppt"].invoke({"summary_text": summary_text})
     ppt_outline_data = ppt_result.get("ppt_outline", [])
     
     # Convert to SlideData objects
@@ -302,7 +331,7 @@ async def download_ppt(request: DownloadPPTRequest):
         )
     
     # Use the PPT download graph to generate the file
-    ppt_result = ppt_download_graph.invoke({"ppt_outline": ppt_outline})
+    ppt_result = graphs["ppt_download"].invoke({"ppt_outline": ppt_outline})
     ppt_file_path = ppt_result.get("ppt_file_path")
     
     if not ppt_file_path or not os.path.exists(ppt_file_path):
@@ -319,7 +348,7 @@ async def download_ppt(request: DownloadPPTRequest):
 @app.post("/chat")
 async def chat(request: ChatRequest):
     """RAG-based chat endpoint using Pinecone vectorstore."""
-    result = chat_graph.invoke({"user_query": request.query})
+    result = graphs["chat"].invoke({"user_query": request.query})
     return {"response": result.get("chat_response", "No response generated")}
 
 
