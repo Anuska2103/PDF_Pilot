@@ -8,14 +8,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- Configuration ---
+
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 eleven_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 
-# --- Node Functions ---
+#node function
 
+#  """Chunks the PDF text and uploads it to Pinecone for RAG."""
 def ingest_to_pinecone_node(state: GraphState):
-    """Chunks the PDF text and uploads it to Pinecone for RAG."""
     print("---NODE: INDEXING TO PINECONE---")
     text = state["pdf_text"]
     
@@ -27,19 +27,22 @@ def ingest_to_pinecone_node(state: GraphState):
     
     return {"next_step": "summarize"}
 
+# """Uses Gemini to create a concise summary of the PDF."""
+
 def summarize_pdf_node(state: GraphState):
-    """Uses Gemini to create a concise summary of the PDF."""
     print("---NODE: SUMMARIZING---")
     pdf_text = state["pdf_text"]
     
-    prompt = f"Summarize the following document in exactly 10 words content in a professional way for an audio overview:\n\n{pdf_text}"
+    prompt = f"Summarize the following document in concise very VERY small  content in a professional way for an audio overview:IF the user does not specify words limit for summary make it within 40 - 50 words\n\n{pdf_text}"
     response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
     summary = response.candidates[0].content.parts[0].text
     
     return {"summary_text": summary}
 
+
+# Converts the summary text into speech using ElevenLabs.
 def generate_tts_node(state: GraphState):
-    """Converts the summary text into speech using ElevenLabs."""
+    
     print("---NODE: GENERATING VOICE---")
     summary = state["summary_text"]
     
@@ -116,9 +119,9 @@ def generate_tts_script_node(state: GraphState):
     return {"audio_path": audio_path}
 
 
-
+#  """Generates 3 follow-up questions based on the PDF content."""
 def generate_suggestions_node(state: GraphState):
-    """Generates 3 follow-up questions based on the PDF content."""
+   
     print("---NODE: GENERATING SUGGESTIONS---")
     pdf_text = state["pdf_text"]
     
@@ -150,8 +153,12 @@ def rag_chat_node(state: GraphState):
     
     return {"chat_response": answer}
 
+
+
+
+# """Creates a structured outline for a PPT based on the summary text."""
 def ppt_outline_node(state: GraphState):
-    """Creates a structured outline for a PPT based on the summary text."""
+    
     print("---NODE: CREATING PPT OUTLINE---")
     summary_text = state["summary_text"]
     
@@ -180,8 +187,12 @@ def ppt_outline_node(state: GraphState):
     
     return {"ppt_outline": ppt_outline}
 
+
+
+
+# """Creates the actual PPTX file from the outline data."""
 def generate_ppt_file_node(state: GraphState):
-    """Creates the actual PPTX file from the outline data."""
+    
     print("---NODE: GENERATING PPTX FILE---")
     from pptx import Presentation
     import uuid
@@ -191,27 +202,27 @@ def generate_ppt_file_node(state: GraphState):
     if not ppt_outline:
         raise ValueError("No PPT outline found in state")
     
-    # Create PowerPoint presentation
+    
     prs = Presentation()
     
-    # Add slides based on outline
+    #making slides based on outline
     for slide_data in ppt_outline:
-        # Add a slide with title and content layout
-        slide_layout = prs.slide_layouts[1]  # Title and Content layout
+        
+        slide_layout = prs.slide_layouts[1]  # Title and Content 
         slide = prs.slides.add_slide(slide_layout)
         
-        # Set title
+       
         title = slide.shapes.title
         title.text = slide_data["title"]
         
-        # Add bullets to content placeholder
+        
         content = slide.placeholders[1]
         content.text = slide_data["caption"]
         
-        # Add bullet points
+        
         text_frame = content.text_frame
         
-        # Add each bullet point
+        
         for bullet in slide_data["bullets"]:
             p = text_frame.add_paragraph()
             p.text = bullet

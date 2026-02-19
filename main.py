@@ -14,11 +14,10 @@ from typing import Dict, Optional, List
 
 app = FastAPI()
 
-# Initialize Pinecone index
+
 init_pinecone_index()
 
-# In-memory session store to maintain state between endpoints
-# In production, use Redis or a proper database
+
 session_store: Dict[str, Dict] = {}
 
 app.add_middleware(
@@ -125,10 +124,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 # ========== ENDPOINT 2: /summarize ==========
 @app.post("/summarize", response_model=SummarizeResponse)
 async def summarize(request: SummarizeRequest):
-    """
-    Triggers the summarizer agent to generate a summary from uploaded content.
-    Pulls content from session state and stores the summary back.
-    """
+    
     # Retrieve session data
     if request.session_id not in session_store:
         raise HTTPException(status_code=404, detail="Session not found. Please upload a PDF first.")
@@ -154,10 +150,7 @@ async def summarize(request: SummarizeRequest):
 # ========== ENDPOINT 3: /audio-overview ==========
 @app.post("/audio-overview", response_model=AudioOverviewResponse)
 async def audio_overview(request: AudioOverviewRequest):
-    """
-    Generates audio from the summary text.
-    Ensures state consistency by using the summary from /summarize endpoint.
-    """
+    
     # Retrieve session data
     if request.session_id not in session_store:
         raise HTTPException(status_code=404, detail="Session not found. Please upload a PDF first.")
@@ -198,14 +191,14 @@ async def audio_podcast(request: AudioOverviewRequest):
     if not pdf_text:
         raise HTTPException(status_code=400, detail="No PDF text found in session")
     
-    # Step 1: Generate podcast script
+    #  Generate podcast script
     script_result = script_graph.invoke({"pdf_text": pdf_text})
     script = script_result.get("script", "")
     
     if not script:
         raise HTTPException(status_code=500, detail="Failed to generate podcast script")
     
-    # Step 2: Generate audio from script with two different voices
+    # Generate audio from script with two different voices
     audio_result = podcast_graph.invoke({"script": script})
     audio_path = audio_result.get("audio_path", "")
     
@@ -223,10 +216,7 @@ async def audio_podcast(request: AudioOverviewRequest):
 # ========== ENDPOINT 5: /transcript ==========
 @app.post("/transcript", response_model=TranscriptResponse)
 async def get_transcript(request: TranscriptRequest):
-    """
-    Retrieves the podcast script/transcript for a given session.
-    This endpoint returns the speaker-wise script generated for the podcast.
-    """
+   
     # Retrieve session data
     if request.session_id not in session_store:
         raise HTTPException(status_code=404, detail="Session not found. Please upload a PDF first.")
@@ -249,9 +239,7 @@ async def get_transcript(request: TranscriptRequest):
 # ========== ENDPOINT 6: /convert-pdf-to-docx ========== 
 @app.post("/convert-pdf-to-docx")
 async def convert_pdf_to_docx_endpoint(file: UploadFile = File(...)):
-    """
-    Accepts a PDF file upload, converts it to DOCX, and returns the DOCX file.
-    """
+    
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     pdf_bytes = await file.read()
@@ -297,10 +285,8 @@ async def ppt_outline(request: PPTOutlineRequest):
 
 @app.post("/download-ppt")
 async def download_ppt(request: DownloadPPTRequest):
-    """
-    Generates and returns a PowerPoint file using the PPT generation node.
-    Only generates the actual file when download is triggered.
-    """
+    
+
     # Retrieve session data
     if request.session_id not in session_store:
         raise HTTPException(status_code=404, detail="Session not found. Please upload a PDF first.")
