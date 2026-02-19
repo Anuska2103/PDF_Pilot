@@ -83,7 +83,7 @@ export default function ResizableGrid() {
       // Optimistic UI update
       setMessages(prev => [...prev, { role: "user", content: `Uploading file: ${file.name}...` }]);
       
-      const response = await axios.post("http://localhost:8000/upload", formData);
+      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/upload", formData);
       setSessionId(response.data.session_id);
       
       setMessages(prev => [
@@ -115,7 +115,7 @@ export default function ResizableGrid() {
     setIsLoading(true);
 
     try {
-      const response = await axios.post("http://localhost:8000/chat", { query: userMessage });
+      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/chat", { query: userMessage });
       // The backend expects session context ideally, but the current /chat implementation in main.py 
       // uses 'chat_graph' which might rely on global state or context injection. 
       // Looking at main.py, /chat endpoint takes ChatRequest(query: str). 
@@ -135,7 +135,7 @@ export default function ResizableGrid() {
     if (!sessionId) return alert("Upload a PDF first!");
     setIsLoading(true);
     try {
-      const response = await axios.post("http://localhost:8000/summarize", { session_id: sessionId });
+      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/summarize", { session_id: sessionId });
       setMessages(prev => [...prev, { role: "assistant", content: `**Summary:**\n${response.data.summary}` }]);
     } catch (error) {
       console.error("Summarize failed", error);
@@ -148,7 +148,7 @@ export default function ResizableGrid() {
     if (!sessionId) return alert("Upload a PDF first!");
     setIsLoading(true);
     try {
-      const response = await axios.post("http://localhost:8000/audio-overview", { session_id: sessionId });
+      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/audio-overview", { session_id: sessionId });
       const audioUrl = response.data.audio_url;
           
 
@@ -171,7 +171,7 @@ export default function ResizableGrid() {
     if (!sessionId) return alert("Upload a PDF first!");
     setIsLoading(true);
     try {
-      const response = await axios.post("http://localhost:8000/audio-podcast", { session_id: sessionId });
+      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/audio-podcast", { session_id: sessionId });
       const audioUrl = response.data.audio_url;
       const script = response.data.script; // Not displayed but available
            // Add to Left Panel list
@@ -193,7 +193,7 @@ export default function ResizableGrid() {
     if (!sessionId) return alert("Upload a PDF first!");
     setIsLoading(true);
     try {
-      const response = await axios.post("http://localhost:8000/transcript", { session_id: sessionId });
+      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/transcript", { session_id: sessionId });
       // Parsing the JSON string script if necessary, but endpoint returns 'script' string. 
       // If it's a JSON string, we might want to prettify it, but sticking to text for now.
       const scriptContent = typeof response.data.script === 'string' ? response.data.script : JSON.stringify(response.data.script, null, 2);
@@ -221,7 +221,7 @@ export default function ResizableGrid() {
     setIsLoading(true);
     try {
         // Trigger PPT outline generation
-        const response = await axios.post("http://localhost:8000/ppt-outline", { session_id: sessionId });
+        const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/ppt-outline", { session_id: sessionId });
         const slides = response.data.slides;
 
         // Display in right panel
@@ -258,11 +258,9 @@ export default function ResizableGrid() {
 
   const handleDownloadPPT = async () => {
       if (!sessionId) return alert("Upload a PDF first!");
-      // This is a direct download link usually
-      // window.open("http://localhost:8000/download-ppt", "_blank");
-      // Could also be a POST request that returns a blob
+     
       try {
-        const response = await axios.post("http://localhost:8000/download-ppt", { session_id: sessionId }, { responseType: 'blob' });
+        const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/download-ppt", { session_id: sessionId }, { responseType: 'blob' });
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
         link.href = url;
@@ -284,7 +282,7 @@ export default function ResizableGrid() {
       formData.append("file", file);
   
       try {
-        const response = await axios.post("http://localhost:8000/convert-pdf-to-docx", formData, { responseType: 'blob' });
+        const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/convert-pdf-to-docx", formData, { responseType: 'blob' });
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
         link.href = url;
