@@ -174,7 +174,7 @@ async def audio_overview(request: AudioOverviewRequest):
     
     return AudioOverviewResponse(
         session_id=request.session_id,
-        audio_url=f"http://localhost:8000/static/{os.path.basename(audio_path)}"
+        audio_url=f"/static/{os.path.basename(audio_path)}"
     )
 
 
@@ -209,7 +209,7 @@ async def audio_podcast(request: AudioOverviewRequest):
     
     return PodcastResponse(
         session_id=request.session_id,
-        audio_url=f"http://localhost:8000/static/{os.path.basename(audio_path)}",
+        audio_url=f"/static/{os.path.basename(audio_path)}",
         script=script
     )
 
@@ -323,7 +323,3 @@ async def chat(request: ChatRequest):
     return {"response": result.get("chat_response", "No response generated")}
 
 
-if __name__ == "__main__":
-    
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
