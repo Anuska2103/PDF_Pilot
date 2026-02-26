@@ -1,8 +1,10 @@
 import os
 import json
 import re
+import base64
+import wave
 from google import genai
-from elevenlabs import ElevenLabs
+from google.genai import types
 from src.agents.states import GraphState
 from src.tools.database import get_vectorstore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -11,7 +13,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-eleven_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 
 def parse_json_safe(text: str):
     """Robustly parse JSON from Gemini responses that may be malformed."""
@@ -62,32 +63,44 @@ def summarize_pdf_node(state: GraphState):
     print("---NODE: SUMMARIZING---")
     pdf_text = state["pdf_text"]
     
-    prompt = f"Summarize the following document in concise very VERY small  content in a professional way for an audio overview:IF the user does not specify words limit for summary make it within 40 - 50 words\n\n{pdf_text}"
+    prompt = f"Summarize the following document in concise manner in a professional way. Keep main ponits and key words blend them together and provide proper summary\n\n{pdf_text}"
     response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
     summary = response.candidates[0].content.parts[0].text
     
     return {"summary_text": summary}
 
 
-# Converts the summary text into speech using ElevenLabs.
+# Converts the summary text into speech using Gemini TTS.
 def generate_tts_node(state: GraphState):
     
     print("---NODE: GENERATING VOICE---")
     summary = state["summary_text"]
     
-    audio_stream = eleven_client.text_to_speech.convert(
-        text=summary,
-        voice_id="21m00Tcm4TlvDq8ikWAM",  
-        model_id="eleven_flash_v2_5",
-        output_format="mp3_44100_128"
+    config = types.GenerateContentConfig(
+        response_modalities=["AUDIO"],
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Algenib")
+            )
+        )
     )
     
-    # Save audio file to assets folder
+    response = client.models.generate_content(
+        model="gemini-2.5-pro-preview-tts",
+        contents=summary,
+        config=config
+    )
+    
+    audio_data = response.candidates[0].content.parts[0].inline_data.data
+    
+    # Save audio file to assets folder as WAV
     os.makedirs("assets", exist_ok=True)
-    audio_path = "assets/summary_audio.mp3"
-    with open(audio_path, "wb") as f:
-        for chunk in audio_stream:
-            f.write(chunk)
+    audio_path = "assets/summary_audio.wav"
+    with wave.open(audio_path, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)   # 16-bit PCM
+        wav_file.setframerate(24000)
+        wav_file.writeframes(audio_data)
             
     return {"audio_path": audio_path}
 
@@ -122,27 +135,48 @@ def generate_script_node(state: GraphState):
 def generate_tts_script_node(state: GraphState):
     script = parse_json_safe(state["script"])
     
-    # Assign specific Voice IDs for your two speakers
-    voice_host = "CwhRBWXzGAHq8TQ4Fs17" # Example: Rachel
-    voice_expert = "FGY2WhTYpPnrIDTdsKH5" # Example: Antoni
+    # Build a plain-text dialogue prompt with speaker labels matching the config
+    dialogue_prompt = "\n".join(
+        f"{line['speaker']}: {line['text']}" for line in script
+    )
     
-    combined_audio = b""
-    
-    for line in script:
-        voice_id = voice_host if line["speaker"] == "Host" else voice_expert
-        audio_stream = eleven_client.text_to_speech.convert(
-            text=line["text"],
-            voice_id=voice_id,
-            model_id="eleven_multilingual_v2",
-            output_format="mp3_44100_128"
+    config = types.GenerateContentConfig(
+        response_modalities=["AUDIO"],
+        speech_config=types.SpeechConfig(
+            multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
+                speaker_voice_configs=[
+                    types.SpeakerVoiceConfig(
+                        speaker="Host",
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Algenib")
+                        )
+                    ),
+                    types.SpeakerVoiceConfig(
+                        speaker="Expert",
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Aoede")
+                        )
+                    ),
+                ]
+            )
         )
-        # Merge by appending bytes (simple and effective for MP3)
-        for chunk in audio_stream:
-            combined_audio += chunk
+    )
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-pro-preview-tts",
+        contents=dialogue_prompt,
+        config=config
+    )
+    
+    audio_data = response.candidates[0].content.parts[0].inline_data.data
 
-    audio_path = "assets/podcast_summary.mp3"
-    with open(audio_path, "wb") as f:
-        f.write(combined_audio)
+    os.makedirs("assets", exist_ok=True)
+    audio_path = "assets/podcast_summary.wav"
+    with wave.open(audio_path, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)   # 16-bit PCM
+        wav_file.setframerate(24000)
+        wav_file.writeframes(audio_data)
         
     return {"audio_path": audio_path}
 
@@ -174,7 +208,12 @@ def rag_chat_node(state: GraphState):
     
     Question: {user_query}
     
-    Answer the question using only the context provided. The answer should be short, precise, and straight to the point. If the answer isn't there, say 'Out of context'.
+    Answer to the question based on the context. the answer should be direct will very very precise elaboration(in mere 1 or 2 sentences) .
+    You will answer questions which are related to the topic and surrounding knowledge use (if asked like elaborate more or give more details, not necessary within the context but surrounding question can be answered within the topic)
+    you will use your llm knowlwdge to answer surrounding possible questions related to the topic and context.
+    If the answer isn't there, or the user askes question which are no where related to the context or surrounding the topic say 'Your PDF does not have that content'.
+    
+    IN the end in seperate line suggest 2 more intresting questions or activities or anything based on the context based on the question and answer you provide to make the user more engaging.
     """
     response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
     answer = response.candidates[0].content.parts[0].text
