@@ -335,7 +335,7 @@ export default function ResizableGrid() {
                 </div>
                 <div className="flex-1 overflow-hidden">
                     <p className="text-sm font-medium truncate">{file.name}</p>
-                    <audio controls src={file.url} className="w-full h-8 mt-2" />
+                    <audio controls src={`https://pdf-pilot-pvvs.onrender.com/${file.url}`} className="w-full h-8 mt-2" />
                 </div>
               </div>
             ))}
