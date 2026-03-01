@@ -2,6 +2,8 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Send, Upload, FileAudio, FileText, Mic, Presentation, ChevronRight, X, Play, Download } from "lucide-react";
 
 // Types
@@ -198,8 +200,7 @@ export default function ResizableGrid() {
       // If it's a JSON string, we might want to prettify it, but sticking to text for now.
       const scriptContent = typeof response.data.script === 'string' ? response.data.script : JSON.stringify(response.data.script, null, 2);
 
-      // Show in right panel as requested (or user might want it downloaded/in chat)
-      // "the output or response of this will be in the rightmost panel" -> implied for general outputs
+      
           setMessages(prev => [
               ...prev,
               {
@@ -378,7 +379,7 @@ export default function ResizableGrid() {
                             ? 'bg-blue-600 text-white rounded-br-none whitespace-pre-wrap' 
                             : 'bg-zinc-800 text-zinc-200 rounded-bl-none'
                         }`}>
-                            {msg.type === 'jsx' ? msg.content : <div className="whitespace-pre-wrap">{msg.content as string}</div>}
+                            {msg.type === 'jsx' ? msg.content : <Markdown rehypePlugins={[remarkGfm]}>{msg.content as string}</Markdown>}
                         </div>
                     </div>
                 ))}

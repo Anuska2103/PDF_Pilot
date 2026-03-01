@@ -2,6 +2,7 @@ from typing import TypedDict, Annotated, List, Optional, Dict, Any
 
 class GraphState(TypedDict, total=False):
     pdf_text: Optional[str]
+    session_id: Optional[str]
     summary_text: Optional[str]
     audio_path: Optional[str]
     ppt_outline: Optional[List[Dict[str, Any]]]

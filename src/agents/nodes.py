@@ -1,7 +1,6 @@
 import os
 import json
 import re
-import base64
 import wave
 from google import genai
 from google.genai import types
@@ -15,14 +14,13 @@ load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def parse_json_safe(text: str):
-    """Robustly parse JSON from Gemini responses that may be malformed."""
-    # 1. Try direct parse first
+    
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # 2. Strip markdown code fences (```json ... ``` or ``` ... ```)
+    #Strip markdown code fences 
     cleaned = re.sub(r'^```(?:json)?\s*', '', text.strip(), flags=re.IGNORECASE)
     cleaned = re.sub(r'\s*```$', '', cleaned.strip())
     try:
@@ -30,7 +28,7 @@ def parse_json_safe(text: str):
     except json.JSONDecodeError:
         pass
 
-    # 3. Extract first JSON array or object using regex
+    #Extract first JSON array or object using regex
     match = re.search(r'(\[.*\]|\{.*\})', cleaned, re.DOTALL)
     if match:
         try:
@@ -38,23 +36,26 @@ def parse_json_safe(text: str):
         except json.JSONDecodeError:
             pass
 
-    # 4. Remove trailing commas before } or ] (common Gemini mistake)
+    #Remove trailing commas before } or ] (common Gemini mistake)
     fixed = re.sub(r',\s*([}\]])', r'\1', cleaned)
     return json.loads(fixed)
 
 #node function
 
-#  """Chunks the PDF text and uploads it to Pinecone for RAG."""
+# Chunks the PDF text and uploads it to Pinecone for RAG
+
 def ingest_to_pinecone_node(state: GraphState):
     print("---NODE: INDEXING TO PINECONE---")
     text = state["pdf_text"]
-    
+    session_id = state.get("session_id", "default")
+
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
-    
+
     vectorstore = get_vectorstore()
-    vectorstore.add_texts(chunks)
-    
+    metadatas = [{"session_id": session_id} for _ in chunks]
+    vectorstore.add_texts(chunks, metadatas=metadatas)
+
     return {"next_step": "summarize"}
 
 # """Uses Gemini to create a concise summary of the PDF."""
@@ -74,8 +75,20 @@ def summarize_pdf_node(state: GraphState):
 def generate_tts_node(state: GraphState):
     
     print("---NODE: GENERATING VOICE---")
-    summary = state["summary_text"]
-    
+    # Always ensure summary is present, generate if missing
+    summary = state.get("summary_text")
+    if not summary:
+        pdf_text = state["pdf_text"]
+        prompt = (
+            "Summarize the following document in concise manner in a professional way. "
+            "Keep main points and key words, blend them together and provide proper summary\n\n"
+            f"{pdf_text}"
+        )
+        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        summary = response.candidates[0].content.parts[0].text
+        # Optionally update state with summary for downstream nodes
+        state["summary_text"] = summary
+
     config = types.GenerateContentConfig(
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
@@ -84,15 +97,15 @@ def generate_tts_node(state: GraphState):
             )
         )
     )
-    
+
     response = client.models.generate_content(
         model="gemini-2.5-pro-preview-tts",
         contents=summary,
         config=config
     )
-    
+
     audio_data = response.candidates[0].content.parts[0].inline_data.data
-    
+
     # Save audio file to assets folder as WAV
     os.makedirs("assets", exist_ok=True)
     audio_path = "assets/summary_audio.wav"
@@ -101,8 +114,8 @@ def generate_tts_node(state: GraphState):
         wav_file.setsampwidth(2)   # 16-bit PCM
         wav_file.setframerate(24000)
         wav_file.writeframes(audio_data)
-            
-    return {"audio_path": audio_path}
+
+    return {"audio_path": audio_path, "summary_text": summary}
 
 
 
@@ -198,9 +211,13 @@ def rag_chat_node(state: GraphState):
     """Answers user queries by retrieving context from Pinecone."""
     print("---NODE: RAG CHAT---")
     user_query = state.get("user_query", "")
-    
+    session_id = state.get("session_id")
+
     vectorstore = get_vectorstore()
-    docs = vectorstore.similarity_search(user_query, k=3)
+    search_kwargs = {"k": 3}
+    if session_id:
+        search_kwargs["filter"] = {"session_id": {"$eq": session_id}}
+    docs = vectorstore.similarity_search(user_query, **search_kwargs)
     context = "\n".join([d.page_content for d in docs])
     
     prompt = f"""

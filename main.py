@@ -76,6 +76,7 @@ app.mount("/static", StaticFiles(directory="assets"), name="static")
 # Request/Response Models
 class ChatRequest(BaseModel):
     query: str
+    session_id: Optional[str] = None
 
 class SummarizeRequest(BaseModel):
     session_id: str
@@ -169,7 +170,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     
     # Asynchronously ingest to Pinecone for RAG
     graphs = load_graphs()
-    ingest_result = graphs["ingest"].invoke({"pdf_text": extracted_text})
+    ingest_result = graphs["ingest"].invoke({"pdf_text": extracted_text, "session_id": session_id})
     
     return UploadResponse(
         session_id=session_id,
@@ -215,15 +216,20 @@ async def audio_overview(request: AudioOverviewRequest):
     session_data = session_store[request.session_id]
     summary_text = session_data.get("summary_text")
     
-    if not summary_text:
-        raise HTTPException(
-            status_code=400, 
-            detail="No summary found. Please call /summarize endpoint first."
-        )
-    
-    # Invoke audio generation agent
     graphs = load_graphs()
-    audio_result = graphs["audio"].invoke({"summary_text": summary_text})
+
+    # If summary not yet generated, generate it silently (not returned to user)
+    if not summary_text:
+        pdf_text = session_data.get("pdf_text")
+        if not pdf_text:
+            raise HTTPException(status_code=400, detail="No PDF text found in session")
+        summary_result = graphs["summarize"].invoke({"pdf_text": pdf_text})
+        summary_text = summary_result.get("summary_text", "")
+        # Store in session so future calls (summarize button, ppt, etc.) reuse it
+        session_store[request.session_id]["summary_text"] = summary_text
+
+    # Invoke audio generation agent using the summary
+    audio_result = graphs["audio"].invoke({"summary_text": summary_text, "pdf_text": session_data.get("pdf_text", "")})
     audio_path = audio_result.get("audio_path", "")
     
     # Store audio path in session
@@ -381,7 +387,10 @@ async def download_ppt(request: DownloadPPTRequest):
 async def chat(request: ChatRequest):
     """RAG-based chat endpoint using Pinecone vectorstore."""
     graphs = load_graphs()
-    result = graphs["chat"].invoke({"user_query": request.query})
+    invoke_input = {"user_query": request.query}
+    if request.session_id:
+        invoke_input["session_id"] = request.session_id
+    result = graphs["chat"].invoke(invoke_input)
     return {"response": result.get("chat_response", "No response generated")}
 
 
