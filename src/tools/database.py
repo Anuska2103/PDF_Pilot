@@ -28,6 +28,10 @@ def init_pinecone_index():
         )
     return pc.Index(index_name)
 
-def get_vectorstore():
-    """Returns the LangChain wrapper for Pinecone."""
-    return PineconeVectorStore(index_name=index_name, embedding=embeddings)
+def get_vectorstore(namespace: str = "default"):
+    """Returns the LangChain wrapper for Pinecone with user-level namespace isolation."""
+    return PineconeVectorStore(
+        index_name=index_name,
+        embedding=embeddings,
+        namespace=namespace
+    )

@@ -4,7 +4,10 @@ import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Upload, FileAudio, FileText, Mic, Presentation, ChevronRight, X, Play, Download } from "lucide-react";
+import { Send, Upload, FileAudio, FileText, Mic, Presentation, ChevronRight, X, Play, Download, Router } from "lucide-react";
+import { useRouter } from "next/navigation";
+// API base
+const API_BASE = "https://pdf-pilot-pvvs.onrender.com";
 
 // Types
 interface Message {
@@ -31,6 +34,8 @@ export default function ResizableGrid() {
 
   // App State
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string>("anonymous");
+  const navigation = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -43,6 +48,13 @@ export default function ResizableGrid() {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  // Fetch current user identity from the server-side JWT cookie
+  useEffect(() => {
+    axios.get("/api/users/me")
+      .then(res => setUserId(res.data.id))
+      .catch(() => setUserId("anonymous"));
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
@@ -80,12 +92,13 @@ export default function ResizableGrid() {
     setIsLoading(true);
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("user_id", userId);
 
     try {
       // Optimistic UI update
       setMessages(prev => [...prev, { role: "user", content: `Uploading file: ${file.name}...` }]);
       
-      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/upload", formData);
+      const response = await axios.post(`${API_BASE}/upload`, formData);
       setSessionId(response.data.session_id);
       
       setMessages(prev => [
@@ -117,12 +130,7 @@ export default function ResizableGrid() {
     setIsLoading(true);
 
     try {
-      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/chat", { query: userMessage });
-      // The backend expects session context ideally, but the current /chat implementation in main.py 
-      // uses 'chat_graph' which might rely on global state or context injection. 
-      // Looking at main.py, /chat endpoint takes ChatRequest(query: str). 
-      // It implies state management might be handled differently or purely by query context if not session-bound in API definition details provided.
-      // Assuming naive implementation for now based on provided main.py.
+      const response = await axios.post(`${API_BASE}/chat`, { query: userMessage, session_id: sessionId });
       
       setMessages(prev => [...prev, { role: "assistant", content: response.data.response }]);
     } catch (error) {
@@ -137,7 +145,7 @@ export default function ResizableGrid() {
     if (!sessionId) return alert("Upload a PDF first!");
     setIsLoading(true);
     try {
-      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/summarize", { session_id: sessionId });
+      const response = await axios.post(`${API_BASE}/summarize`, { session_id: sessionId });
       setMessages(prev => [...prev, { role: "assistant", content: `**Summary:**\n${response.data.summary}` }]);
     } catch (error) {
       console.error("Summarize failed", error);
@@ -150,7 +158,7 @@ export default function ResizableGrid() {
     if (!sessionId) return alert("Upload a PDF first!");
     setIsLoading(true);
     try {
-      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/audio-overview", { session_id: sessionId });
+      const response = await axios.post(`${API_BASE}/audio-overview`, { session_id: sessionId });
       const audioUrl = response.data.audio_url;
           
 
@@ -173,7 +181,7 @@ export default function ResizableGrid() {
     if (!sessionId) return alert("Upload a PDF first!");
     setIsLoading(true);
     try {
-      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/audio-podcast", { session_id: sessionId });
+      const response = await axios.post(`${API_BASE}/audio-podcast`, { session_id: sessionId });
       const audioUrl = response.data.audio_url;
       const script = response.data.script; // Not displayed but available
            // Add to Left Panel list
@@ -195,9 +203,7 @@ export default function ResizableGrid() {
     if (!sessionId) return alert("Upload a PDF first!");
     setIsLoading(true);
     try {
-      const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/transcript", { session_id: sessionId });
-      // Parsing the JSON string script if necessary, but endpoint returns 'script' string. 
-      // If it's a JSON string, we might want to prettify it, but sticking to text for now.
+      const response = await axios.post(`${API_BASE}/transcript`, { session_id: sessionId });
       const scriptContent = typeof response.data.script === 'string' ? response.data.script : JSON.stringify(response.data.script, null, 2);
 
       
@@ -222,7 +228,7 @@ export default function ResizableGrid() {
     setIsLoading(true);
     try {
         // Trigger PPT outline generation
-        const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/ppt-outline", { session_id: sessionId });
+        const response = await axios.post(`${API_BASE}/ppt-outline`, { session_id: sessionId });
         const slides = response.data.slides;
 
         // Display in right panel
@@ -261,7 +267,7 @@ export default function ResizableGrid() {
       if (!sessionId) return alert("Upload a PDF first!");
      
       try {
-        const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/download-ppt", { session_id: sessionId }, { responseType: 'blob' });
+        const response = await axios.post(`${API_BASE}/download-ppt`, { session_id: sessionId }, { responseType: 'blob' });
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
         link.href = url;
@@ -283,7 +289,7 @@ export default function ResizableGrid() {
       formData.append("file", file);
   
       try {
-        const response = await axios.post("https://pdf-pilot-pvvs.onrender.com/convert-pdf-to-docx", formData, { responseType: 'blob' });
+        const response = await axios.post(`${API_BASE}/convert-pdf-to-docx`, formData, { responseType: 'blob' });
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
         link.href = url;
@@ -308,7 +314,14 @@ export default function ResizableGrid() {
       }
   }
 
-
+const logout = async () => {
+    try {
+     await axios.get("/api/users/logout");
+     window.location.href = '/login';
+    } catch (error:any) {
+      console.error("Logout failed", error);
+    }
+}
   return (
     <div 
       className="h-screen w-full bg-zinc-900 text-white flex  select-none"
@@ -324,11 +337,18 @@ export default function ResizableGrid() {
         }}
       >
         {/* Left Column: Audio Files */}
-        <aside className="bg-zinc-900 flex flex-col items-center border-r border-zinc-800 overflow-y-auto">
-          <div className="p-4 w-full border-b border-zinc-800">
+        <aside className="bg-zinc-900 flex flex-col items-center border-r border-zinc-800">
+          <div className="p-4 w-full border-b border-zinc-800 flex items-center justify-between">
             <h2 className="font-bold text-zinc-400 uppercase text-xs tracking-wider">Audio Library</h2>
+            <button
+              onClick={() => navigation.push("/analytics")}
+              className="text-xs text-sky-400 hover:text-sky-300 transition"
+              title="View Analytics"
+            >
+              Analytics →
+            </button>
           </div>
-          <div className="w-full p-2 space-y-2">
+          <div className="flex-1 w-full p-2 space-y-2 overflow-y-auto">
             {audioFiles.map(file => (
               <div key={file.id} className="p-3 bg-zinc-800 rounded hover:bg-zinc-700 transition cursor-pointer flex items-center gap-3">
                 <div className="p-2 bg-zinc-900 rounded-full">
@@ -336,7 +356,7 @@ export default function ResizableGrid() {
                 </div>
                 <div className="flex-1 overflow-hidden">
                     <p className="text-sm font-medium truncate">{file.name}</p>
-                    <audio controls src={`https://pdf-pilot-pvvs.onrender.com${file.url}`} className="w-full h-8 mt-2" />
+                    <audio controls src={`${API_BASE}${file.url}`} className="w-full h-8 mt-2" />
                 </div>
               </div>
             ))}
@@ -345,6 +365,16 @@ export default function ResizableGrid() {
                     <p className="text-sm">No audio files generated yet.</p>
                 </div>
             )}
+          </div>
+          <div className="w-full p-4 flex justify-center border-t border-zinc-800">
+            <button
+              onClick={logout}
+              aria-label="Logout"
+              className="flex items-center gap-2 bg-zinc-800 hover:bg-teal-800 text-zinc-200 border border-zinc-700 px-4 py-2 rounded-full shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              <X size={16} className="text-zinc-200" />
+              <span className="font-medium">Logout</span>
+            </button>
           </div>
         </aside>
 

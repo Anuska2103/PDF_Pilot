@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +8,7 @@ from pypdf import PdfReader
 import io
 import os
 import uuid
+from datetime import datetime
 from typing import Dict, Optional, List
 
 
@@ -140,38 +141,46 @@ async def health_check():
 
 # ========== ENDPOINT 1: /upload ==========
 @app.post("/upload", response_model=UploadResponse)
-async def upload_pdf(file: UploadFile = File(...)):
-    
-    
+async def upload_pdf(
+    file: UploadFile = File(...),
+    user_id: str = Form(default="anonymous")
+):
     pdf_data = await file.read()
     reader = PdfReader(io.BytesIO(pdf_data))
-    
+
     if reader.is_encrypted:
         try:
-            reader.decrypt("") 
+            reader.decrypt("")
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"PDF is password protected: {str(e)}")
-    
+
     extracted_text = ""
     for page in reader.pages:
         extracted_text += page.extract_text()
-    
+
     if not extracted_text.strip():
         raise HTTPException(status_code=400, detail="No text content found in PDF")
-    
+
     # Generate unique session ID
     session_id = str(uuid.uuid4())
-    
-    # Store PDF content and ingest to Pinecone in background
+
+    # Store PDF content with user context
     session_store[session_id] = {
         "pdf_text": extracted_text,
-        "filename": file.filename
+        "filename": file.filename,
+        "user_id": user_id,
+        "upload_time": datetime.utcnow().isoformat(),
     }
-    
-    # Asynchronously ingest to Pinecone for RAG
+
+    # Ingest to Pinecone under user namespace
     graphs = load_graphs()
-    ingest_result = graphs["ingest"].invoke({"pdf_text": extracted_text, "session_id": session_id})
-    
+    graphs["ingest"].invoke({
+        "pdf_text": extracted_text,
+        "session_id": session_id,
+        "user_id": user_id,
+        "filename": file.filename,
+    })
+
     return UploadResponse(
         session_id=session_id,
         message=f"PDF '{file.filename}' uploaded successfully",
@@ -390,7 +399,35 @@ async def chat(request: ChatRequest):
     invoke_input = {"user_query": request.query}
     if request.session_id:
         invoke_input["session_id"] = request.session_id
+        # Fetch the user_id that was stored during upload
+        session_data = session_store.get(request.session_id, {})
+        invoke_input["user_id"] = session_data.get("user_id", "anonymous")
     result = graphs["chat"].invoke(invoke_input)
     return {"response": result.get("chat_response", "No response generated")}
+
+
+# ========== ANALYTICS ENDPOINT ==========
+@app.get("/analytics/{user_id}")
+async def get_user_analytics(user_id: str):
+    """Returns upload history and feature usage for a given user."""
+    user_sessions = [
+        {
+            "session_id": sid,
+            "filename": data.get("filename", "Unknown"),
+            "upload_time": data.get("upload_time"),
+            "text_length": len(data.get("pdf_text", "")),
+            "has_summary": "summary_text" in data,
+            "has_audio_overview": "audio_path" in data,
+            "has_podcast": "podcast_audio_path" in data,
+            "has_ppt": "ppt_outline" in data,
+        }
+        for sid, data in session_store.items()
+        if data.get("user_id") == user_id
+    ]
+    return {
+        "user_id": user_id,
+        "total_uploads": len(user_sessions),
+        "sessions": user_sessions,
+    }
 
 

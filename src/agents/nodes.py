@@ -48,12 +48,19 @@ def ingest_to_pinecone_node(state: GraphState):
     print("---NODE: INDEXING TO PINECONE---")
     text = state["pdf_text"]
     session_id = state.get("session_id", "default")
+    user_id = state.get("user_id", "anonymous")
+    filename = state.get("filename", "unknown")
+
+    namespace = f"user_{user_id}"
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     chunks = text_splitter.split_text(text)
 
-    vectorstore = get_vectorstore()
-    metadatas = [{"session_id": session_id} for _ in chunks]
+    vectorstore = get_vectorstore(namespace=namespace)
+    metadatas = [
+        {"session_id": session_id, "user_id": user_id, "filename": filename}
+        for _ in chunks
+    ]
     vectorstore.add_texts(chunks, metadatas=metadatas)
 
     return {"next_step": "summarize"}
@@ -212,9 +219,11 @@ def rag_chat_node(state: GraphState):
     print("---NODE: RAG CHAT---")
     user_query = state.get("user_query", "")
     session_id = state.get("session_id")
+    user_id = state.get("user_id", "anonymous")
 
-    vectorstore = get_vectorstore()
-    search_kwargs = {"k": 3}
+    namespace = f"user_{user_id}"
+    vectorstore = get_vectorstore(namespace=namespace)
+    search_kwargs = {"k": 5}
     if session_id:
         search_kwargs["filter"] = {"session_id": {"$eq": session_id}}
     docs = vectorstore.similarity_search(user_query, **search_kwargs)
